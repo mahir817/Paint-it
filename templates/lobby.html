@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Lobby - {{ room }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+</head>
+<body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen">
+
+    <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-lg">
+        <h1 class="text-2xl font-bold mb-2">Lobby: {{ room }}</h1>
+        <p class="mb-4 font-medium">You are: {{ player_name }}</p>
+
+        <div id="players" class="mb-4">
+            <h2 class="font-semibold">Connected Players:</h2>
+            <ul id="player-list"></ul>
+        </div>
+
+        <div class="flex gap-2">
+            <input id="friend-name" type="text" placeholder="Invite friend"
+                   class="p-2 border rounded w-full">
+            <button id="invite-btn" class="p-2 bg-blue-500 text-white rounded">Invite</button>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/lobby.js') }}"></script>
+</body>
+</html>

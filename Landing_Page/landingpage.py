@@ -7,13 +7,14 @@ def landing():
     if request.method == 'POST':
         action = request.form.get('action')
         room_name = request.form.get('room_name', '').strip()
-        if action == 'create' and room_name:
-            # Redirect to lobby with room name
-            return redirect(url_for('landing.lobby', room=room_name))
-        elif action == 'join' and room_name:
-            return redirect(url_for('landing.lobby', room=room_name))
+        player_name = request.form.get('player_name', '').strip()
+
+        if action in ['create', 'join'] and room_name and player_name:
+            return redirect(url_for('landing.lobby', room=room_name, player=player_name))
+
     return render_template('landing.html')
 
 @landing_bp.route('/lobby/<room>')
 def lobby(room):
-    return f"Welcome to Lobby: {room} (Phase 1 placeholder)"
+    player_name = request.args.get('player', 'Guest')
+    return render_template('lobby.html', room=room, player_name=player_name)
