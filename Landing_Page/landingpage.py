@@ -14,6 +14,7 @@ def landing():
 
     return render_template('landing.html')
 
+
 @landing_bp.route('/lobby/<room>')
 def lobby(room):
     player_name = request.args.get('player', 'Guest')
