@@ -2,33 +2,53 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Lobby - {{ room }}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Lobby - {{ room_id }}</title>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 flex flex-col items-center justify-center min-h-screen">
 
-    <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-lg">
-        <h1 class="text-2xl font-bold mb-2">Lobby: {{ room }}</h1>
-        <p class="mb-4 font-medium">You are: {{ player_name }}</p>
+<div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-lg">
+    <h1 class="text-2xl font-bold mb-2">Lobby: {{ room_id }}</h1>
+    <p class="mb-4 font-medium">You are: {{ player_name }}</p>
 
-        <div id="players" class="mb-4">
-            <h2 class="font-semibold">Connected Players:</h2>
-            <ul id="player-list"></ul>
-        </div>
-
-        <div class="mb-4 flex gap-2">
-            <input id="friend-name" type="text" placeholder="Invite friend"
-                   class="p-2 border rounded w-full">
-            <button id="invite-btn" class="p-2 bg-blue-500 text-white rounded">Invite</button>
-        </div>
-
-        <div id="invites">
-            <h2 class="font-semibold">Invited Friends:</h2>
-            <ul id="invite-list"></ul>
-        </div>
+    <div id="players" class="mb-4">
+        <h2 class="font-semibold">Connected Players:</h2>
+        <ul id="player-list"></ul>
     </div>
 
-    <script src="{{ url_for('static', filename='js/lobby.js') }}"></script>
+    <div class="mb-4">
+        <button id="copy-room-id" class="p-2 bg-blue-500 text-white rounded">
+            Copy Room ID
+        </button>
+    </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+    const socket = io();
+    const roomId = "{{ room_id }}";
+    const playerName = "{{ player_name }}";
+    const playerList = document.getElementById('player-list');
+
+    socket.emit('join_room', { room_id: roomId, player_name: playerName });
+
+    socket.on('update_players', data => {
+        playerList.innerHTML = '';
+        data.players.forEach(p => {
+            const li = document.createElement('li');
+            li.textContent = p;
+            playerList.appendChild(li);
+        });
+    });
+
+    // Copy room ID button
+    document.getElementById('copy-room-id').addEventListener('click', () => {
+        navigator.clipboard.writeText(roomId).then(() => {
+            alert("Room ID copied: " + roomId);
+        });
+    });
+});
+</script>
 </body>
 </html>
