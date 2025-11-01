@@ -17,11 +17,19 @@
         <ul id="player-list"></ul>
     </div>
 
-    <div class="mb-4">
-        <button id="copy-room-id" class="p-2 bg-blue-500 text-white rounded">
+    <div class="mb-4 flex gap-2">
+        <button id="copy-room-id" class="p-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition">
             Copy Room ID
         </button>
+        <button id="start-game" class="p-2 bg-green-500 text-white rounded hover:bg-green-600 transition">
+            Start Game
+        </button>
+        <button id="enter-room" class="p-2 bg-purple-500 text-white rounded hover:bg-purple-600 transition">
+            Enter Room
+        </button>
     </div>
+    
+    <div id="error-message" class="hidden bg-red-100 text-red-700 p-3 rounded mb-4"></div>
 </div>
 
 <script>
@@ -30,6 +38,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const roomId = "{{ room_id }}";
     const playerName = "{{ player_name }}";
     const playerList = document.getElementById('player-list');
+    const errorMsg = document.getElementById('error-message');
 
     socket.emit('join_room', { room_id: roomId, player_name: playerName });
 
@@ -38,8 +47,20 @@ document.addEventListener("DOMContentLoaded", () => {
         data.players.forEach(p => {
             const li = document.createElement('li');
             li.textContent = p;
+            li.className = 'p-2 border-b';
             playerList.appendChild(li);
         });
+    });
+
+    socket.on('error', data => {
+        errorMsg.textContent = data.message;
+        errorMsg.classList.remove('hidden');
+        setTimeout(() => errorMsg.classList.add('hidden'), 5000);
+    });
+
+    socket.on('game_started', () => {
+        // Redirect to game room
+        window.location.href = `/room/${roomId}?player=${encodeURIComponent(playerName)}`;
     });
 
     // Copy room ID button
@@ -47,6 +68,16 @@ document.addEventListener("DOMContentLoaded", () => {
         navigator.clipboard.writeText(roomId).then(() => {
             alert("Room ID copied: " + roomId);
         });
+    });
+
+    // Start game button
+    document.getElementById('start-game').addEventListener('click', () => {
+        socket.emit('start_game', { room_id: roomId });
+    });
+
+    // Enter room button
+    document.getElementById('enter-room').addEventListener('click', () => {
+        window.location.href = `/room/${roomId}?player=${encodeURIComponent(playerName)}`;
     });
 });
 </script>
