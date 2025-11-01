@@ -1,5 +1,7 @@
 """Word lists and category data for the game"""
 
+from typing import List
+
 # Word categories
 WORDS = {
     "animals": [

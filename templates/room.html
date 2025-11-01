@@ -37,9 +37,8 @@
 
                 <!-- Word Hint Display -->
                 <div id="word-hint" class="mb-4 p-3 bg-blue-100 rounded-lg">
-                    <p class="text-center">
-                        <span id="hint-text" class="text-xl font-mono">Word Length: <span id="word-length">-</span></span>
-                    </p>
+                    <p id="hint-text" class="text-center text-sm text-gray-600 mb-2">Word length: <span id="word-length">-</span></p>
+                    <p id="hint-display" class="text-2xl font-mono text-center font-bold"></p>
                 </div>
 
                 <!-- Drawing Canvas -->
@@ -104,26 +103,38 @@
     </div>
 </div>
 
-<!-- Game Over Modal -->
-<div id="turn-ended-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+<!-- Round End Modal -->
+<div id="round-ended-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
     <div class="bg-white rounded-lg p-6 max-w-md">
-        <h2 class="text-2xl font-bold mb-4">Turn Ended!</h2>
-        <div id="turn-results"></div>
-        <button id="close-modal" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+        <h2 class="text-2xl font-bold mb-4">Round <span id="modal-round">-</span> Ended!</h2>
+        <div id="round-results"></div>
+        <button id="close-round-modal" class="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
             Continue
         </button>
     </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/socket.js') }}"></script>
-<script src="{{ url_for('static', filename='js/drawing.js') }}"></script>
-<script src="{{ url_for('static', filename='js/ui.js') }}"></script>
+<!-- Game Over Modal -->
+<div id="game-over-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-6 max-w-md">
+        <h2 class="text-2xl font-bold mb-4">🎉 Game Over!</h2>
+        <div id="game-over-results"></div>
+        <button id="close-game-modal" class="mt-4 px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600">
+            Close
+        </button>
+    </div>
+</div>
 
 <script>
-// Initialize with room data
+// Initialize with room data FIRST, before any scripts load
 window.ROOM_ID = "{{ room_id }}";
 window.PLAYER_NAME = "{{ player_name }}";
+console.log('Room initialized:', window.ROOM_ID, window.PLAYER_NAME);
 </script>
+
+<script src="{{ url_for('static', filename='js/drawing.js') }}"></script>
+<script src="{{ url_for('static', filename='js/socket.js') }}"></script>
+<script src="{{ url_for('static', filename='js/ui.js') }}"></script>
 
 </body>
 </html>

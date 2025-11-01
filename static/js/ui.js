@@ -3,10 +3,22 @@
  */
 
 function initUI() {
-    setupChatInput();
-    setupHintButton();
-    setupModal();
-    setupKeyboardShortcuts();
+    // Wait a bit for socket to initialize
+    const checkSocket = () => {
+        const socket = window.gameSocket ? window.gameSocket() : null;
+        if (!socket) {
+            // Retry after a short delay
+            setTimeout(checkSocket, 100);
+            return;
+        }
+        
+        setupChatInput();
+        setupHintButton();
+        setupModal();
+        setupKeyboardShortcuts();
+    };
+    
+    checkSocket();
 }
 
 function setupChatInput() {
@@ -17,28 +29,33 @@ function setupChatInput() {
     
     function sendMessage() {
         const message = chatInput.value.trim();
-        if (!message || !socket || !roomId || !playerName) return;
+        const socket = window.gameSocket ? window.gameSocket() : null;
+        const roomId = window.gameRoomId ? window.gameRoomId() : null;
+        const playerName = window.gamePlayerName ? window.gamePlayerName() : null;
+        const isDrawer = window.gameIsDrawer ? window.gameIsDrawer() : false;
         
-        // Don't allow drawer to send guesses
+        if (!message || !socket || !roomId || !playerName) {
+            console.log('Cannot send message:', {socket: !!socket, roomId, playerName, message});
+            return;
+        }
+        
+        // Don't allow drawer to send guesses (but allow chat)
         if (isDrawer) {
-            addChatMessage('System', 'You are drawing, cannot guess!');
+            // Allow drawer to send chat messages but not guesses
+            socket.emit('send_message', {
+                room_id: roomId,
+                player_name: playerName,
+                message: message,
+                timestamp: new Date().toISOString()
+            });
             chatInput.value = '';
             return;
         }
         
         // Send as guess
-        socket.emit('submit_guess', {
-            room_id: roomId,
-            player_name: playerName,
+        socket.emit('guess', {
+            roomCode: roomId,
             guess: message
-        });
-        
-        // Also send as chat message
-        socket.emit('send_message', {
-            room_id: roomId,
-            player_name: playerName,
-            message: message,
-            timestamp: new Date().toISOString()
         });
         
         chatInput.value = '';
@@ -56,9 +73,15 @@ function setupChatInput() {
 function setupHintButton() {
     const hintBtn = document.getElementById('hint-btn');
     
-    if (!hintBtn || !socket || !roomId) return;
+    if (!hintBtn) return;
     
     hintBtn.addEventListener('click', () => {
+        const socket = window.gameSocket ? window.gameSocket() : null;
+        const roomId = window.gameRoomId ? window.gameRoomId() : null;
+        const isDrawer = window.gameIsDrawer ? window.gameIsDrawer() : false;
+        
+        if (!socket || !roomId) return;
+        
         // Only non-drawers can request hints
         if (isDrawer) {
             alert('You are the drawer! You know the word.');
@@ -72,21 +95,37 @@ function setupHintButton() {
 }
 
 function setupModal() {
-    const modal = document.getElementById('turn-ended-modal');
-    const closeBtn = document.getElementById('close-modal');
+    // Round end modal
+    const roundModal = document.getElementById('round-ended-modal');
+    const closeRoundBtn = document.getElementById('close-round-modal');
     
-    if (!modal || !closeBtn) return;
+    if (roundModal && closeRoundBtn) {
+        closeRoundBtn.addEventListener('click', () => {
+            roundModal.classList.add('hidden');
+        });
+        
+        roundModal.addEventListener('click', (e) => {
+            if (e.target === roundModal) {
+                roundModal.classList.add('hidden');
+            }
+        });
+    }
     
-    closeBtn.addEventListener('click', () => {
-        modal.classList.add('hidden');
-    });
+    // Game over modal
+    const gameModal = document.getElementById('game-over-modal');
+    const closeGameBtn = document.getElementById('close-game-modal');
     
-    // Close on outside click
-    modal.addEventListener('click', (e) => {
-        if (e.target === modal) {
-            modal.classList.add('hidden');
-        }
-    });
+    if (gameModal && closeGameBtn) {
+        closeGameBtn.addEventListener('click', () => {
+            gameModal.classList.add('hidden');
+        });
+        
+        gameModal.addEventListener('click', (e) => {
+            if (e.target === gameModal) {
+                gameModal.classList.add('hidden');
+            }
+        });
+    }
 }
 
 function setupKeyboardShortcuts() {
@@ -100,16 +139,22 @@ function setupKeyboardShortcuts() {
             }
         }
         
-        // Escape to close modal
+        // Escape to close modals
         if (e.key === 'Escape') {
-            const modal = document.getElementById('turn-ended-modal');
-            if (modal && !modal.classList.contains('hidden')) {
-                modal.classList.add('hidden');
+            const roundModal = document.getElementById('round-ended-modal');
+            const gameModal = document.getElementById('game-over-modal');
+            if (roundModal && !roundModal.classList.contains('hidden')) {
+                roundModal.classList.add('hidden');
+            }
+            if (gameModal && !gameModal.classList.contains('hidden')) {
+                gameModal.classList.add('hidden');
             }
         }
         
         // C to clear canvas (only for drawer)
         if (e.key === 'c' || e.key === 'C') {
+            const isDrawer = window.gameIsDrawer ? window.gameIsDrawer() : false;
+            const drawingCanvas = window.drawingCanvas;
             if (isDrawer && drawingCanvas) {
                 const clearBtn = document.getElementById('clear-btn');
                 if (clearBtn && !clearBtn.disabled) {

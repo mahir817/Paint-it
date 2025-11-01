@@ -31,7 +31,7 @@ class DrawingCanvas {
         const rect = container.getBoundingClientRect();
         
         // Set canvas size (maintain 16:9 aspect ratio or use available space)
-        const maxWidth = rect.width - 16; // padding
+        const maxWidth = Math.max(rect.width - 16, 400); // padding, minimum 400px
         const maxHeight = Math.min(600, window.innerHeight * 0.6);
         
         this.canvas.width = maxWidth;
@@ -40,6 +40,12 @@ class DrawingCanvas {
         // Set drawing properties
         this.ctx.lineCap = 'round';
         this.ctx.lineJoin = 'round';
+        this.ctx.strokeStyle = this.currentColor;
+        this.ctx.lineWidth = this.currentLineWidth;
+        
+        // Fill canvas with white background
+        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     }
     
     setupControls() {
@@ -131,15 +137,14 @@ class DrawingCanvas {
         
         // Send drawing data to server
         if (this.socket && this.roomId) {
-            this.socket.emit('draw', {
-                room_id: this.roomId,
-                x: currentX,
-                y: currentY,
-                prevX: this.prevX,
-                prevY: this.prevY,
+            this.socket.emit('drawing', {
+                room: this.roomId,
+                x0: this.prevX,
+                y0: this.prevY,
+                x1: currentX,
+                y1: currentY,
                 color: this.currentColor,
-                lineWidth: this.currentLineWidth,
-                isDrawing: true
+                size: this.currentLineWidth
             });
         }
         
@@ -154,28 +159,37 @@ class DrawingCanvas {
     }
     
     clearCanvas() {
+        // Clear and restore white background
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         
         if (this.socket && this.roomId) {
             this.socket.emit('clear_canvas', {
-                room_id: this.roomId
+                room_id: this.roomId,
+                room: this.roomId
             });
         }
     }
     
     drawFromRemote(data) {
         if (data.isDrawing) {
-            this.ctx.strokeStyle = data.color;
-            this.ctx.lineWidth = data.lineWidth;
+            this.ctx.strokeStyle = data.color || '#000000';
+            this.ctx.lineWidth = data.lineWidth || 5;
+            this.ctx.lineCap = 'round';
+            this.ctx.lineJoin = 'round';
             this.ctx.beginPath();
-            this.ctx.moveTo(data.prevX, data.prevY);
+            this.ctx.moveTo(data.prevX || data.x, data.prevY || data.y);
             this.ctx.lineTo(data.x, data.y);
             this.ctx.stroke();
         }
     }
     
     clearFromRemote() {
+        // Clear and restore white background
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.fillStyle = '#FFFFFF';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
     }
     
     setDrawerMode(isDrawer) {
@@ -191,10 +205,7 @@ class DrawingCanvas {
     }
 }
 
-// Global drawing canvas instance
-let drawingCanvas = null;
-
-// Initialize when DOM is ready
+// Export DrawingCanvas class globally
 if (typeof window !== 'undefined') {
     window.DrawingCanvas = DrawingCanvas;
 }

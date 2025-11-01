@@ -17,28 +17,65 @@ window.gameIsDrawer = () => isDrawer;
 
 function initSocket() {
     if (!window.ROOM_ID || !window.PLAYER_NAME) {
-        console.error('Room ID or Player Name not found');
+        console.error('Room ID or Player Name not found', {
+            ROOM_ID: window.ROOM_ID,
+            PLAYER_NAME: window.PLAYER_NAME
+        });
+        // Retry after a short delay
+        setTimeout(initSocket, 100);
         return;
     }
     
     roomId = window.ROOM_ID;
     playerName = window.PLAYER_NAME;
     
+    console.log('Initializing socket for room:', roomId, 'player:', playerName);
     socket = io();
     
-    // Initialize drawing canvas (must be available globally)
-    if (typeof DrawingCanvas !== 'undefined') {
-        drawingCanvas = new DrawingCanvas('drawing-canvas', socket, roomId);
-        window.drawingCanvas = drawingCanvas; // Make globally accessible
-    }
+    // Update global getters
+    window.gameSocket = () => socket;
+    window.gameRoomId = () => roomId;
+    window.gamePlayerName = () => playerName;
     
     setupSocketListeners();
     
-    // Join room
-    socket.emit('join_room', {
-        room_id: roomId,
-        player_name: playerName
+    // Wait for DOM and socket to be ready before initializing canvas
+    const initCanvas = () => {
+        if (typeof DrawingCanvas !== 'undefined' && document.getElementById('drawing-canvas')) {
+            drawingCanvas = new DrawingCanvas('drawing-canvas', socket, roomId);
+            window.drawingCanvas = drawingCanvas; // Make globally accessible
+            // Initially enable drawing (will be disabled later if not drawer)
+            drawingCanvas.setDrawerMode(true);
+        }
+    };
+    
+    // Initialize canvas when ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initCanvas);
+    } else {
+        // Small delay to ensure socket is connected
+        setTimeout(initCanvas, 100);
+    }
+    
+    // Function to join room
+    const joinRoom = () => {
+        console.log('Joining room:', roomId, 'as', playerName);
+        socket.emit('join_room', {
+            room_id: roomId,
+            player_name: playerName
+        });
+    };
+    
+    // Wait for connection before joining room
+    socket.once('connect', () => {
+        console.log('Socket connected, joining room...');
+        joinRoom();
     });
+    
+    // Also try to join immediately if already connected
+    if (socket.connected) {
+        joinRoom();
+    }
 }
 
 function setupSocketListeners() {
@@ -56,8 +93,30 @@ function setupSocketListeners() {
     });
     
     // Player management
+    socket.on('update_player_list', (data) => {
+        console.log('Players updated:', data.players);
+        if (data.players && Array.isArray(data.players)) {
+            updatePlayersList(data.players);
+            // Update scores from player data
+            const scores = {};
+            data.players.forEach(p => {
+                scores[p.name] = p.score || 0;
+            });
+            updateScores(scores);
+        }
+    });
+    
+    // Backward compatibility
     socket.on('update_players', (data) => {
-        updatePlayersList(data.players);
+        if (data.players && Array.isArray(data.players)) {
+            updatePlayersList(data.players);
+        }
+    });
+    
+    socket.on('you_are_host', () => {
+        console.log('You are the host!');
+        addChatMessage('System', 'You are the host - you can start the game!');
+        // Show host controls (can be added to UI)
     });
     
     socket.on('player_left', (data) => {
@@ -76,15 +135,24 @@ function setupSocketListeners() {
         addChatMessage('System', 'Game started!');
     });
     
-    socket.on('turn_started', (data) => {
-        gameState = data;
-        isDrawer = (data.current_drawer === playerName);
-        updateGameUI(data);
+    socket.on('round_start', (data) => {
+        console.log('Round started:', data);
+        gameState = gameState || {};
+        gameState.current_drawer = data.drawer;
+        gameState.current_round = data.round;
+        gameState.max_rounds = data.max_rounds;
+        
+        isDrawer = (data.drawer === playerName);
+        window.gameIsDrawer = () => isDrawer;
+        
+        updateGameUI(gameState);
         
         if (isDrawer) {
             addChatMessage('System', 'Your turn to draw!');
         } else {
-            addChatMessage('System', `${data.current_drawer} is drawing...`);
+            addChatMessage('System', `${data.drawer} is drawing...`);
+            // Show word blanks
+            showWordBlanks(data.word_length);
         }
         
         // Update drawer mode for canvas
@@ -93,9 +161,28 @@ function setupSocketListeners() {
         }
     });
     
-    socket.on('turn_ended', (data) => {
-        showTurnEndedModal(data);
-        addChatMessage('System', `Turn ended! The word was: ${data.word}`);
+    socket.on('timer_update', (data) => {
+        const timeEl = document.getElementById('time-remaining');
+        if (timeEl) {
+            timeEl.textContent = data.time_left;
+            
+            // Change color when time is running out
+            if (data.time_left <= 10) {
+                timeEl.classList.add('text-red-600', 'font-bold');
+            } else {
+                timeEl.classList.remove('text-red-600', 'font-bold');
+            }
+        }
+    });
+    
+    socket.on('round_end', (data) => {
+        showRoundEndModal(data);
+        addChatMessage('System', `Round ${data.round} ended! The word was: ${data.word}`);
+    });
+    
+    socket.on('game_over', (data) => {
+        showGameOverModal(data);
+        addChatMessage('System', `🎉 Game Over! Winner: ${data.winner} with ${data.winner_score} points!`);
     });
     
     // Word events
@@ -103,11 +190,31 @@ function setupSocketListeners() {
         showWordDisplay(data.word);
     });
     
-    socket.on('hint_revealed', (data) => {
+    socket.on('hint', (data) => {
+        console.log('Hint received:', data);
         updateWordHint(data);
     });
     
+    socket.on('blocked_message', (data) => {
+        addChatMessage('System', data.message || 'Message blocked');
+    });
+    
     // Drawing events
+    socket.on('update_canvas', (data) => {
+        if (drawingCanvas) {
+            drawingCanvas.drawFromRemote({
+                prevX: data.x0,
+                prevY: data.y0,
+                x: data.x1,
+                y: data.y1,
+                color: data.color,
+                lineWidth: data.size,
+                isDrawing: true
+            });
+        }
+    });
+    
+    // Backward compatibility
     socket.on('draw_update', (data) => {
         if (drawingCanvas) {
             drawingCanvas.drawFromRemote(data);
@@ -123,7 +230,11 @@ function setupSocketListeners() {
     // Guess events
     socket.on('correct_guess', (data) => {
         addChatMessage('System', 
-            `${data.player} guessed correctly! (+${data.points} points)`);
+            `🎉 ${data.player} guessed correctly! (+${data.points} points)`);
+        if (data.drawer_bonus > 0) {
+            addChatMessage('System', 
+                `Drawer bonus: +${data.drawer_bonus} points`);
+        }
         updateScores(data.scores);
     });
     
@@ -163,9 +274,13 @@ function updateGameUI(state) {
         wordLengthEl.textContent = state.word_length;
     }
     
-    // Update scores
+    // Update scores - convert player state to scores dict
     if (state.players) {
-        updateScores(state.players);
+        const scores = {};
+        for (const [name, playerData] of Object.entries(state.players)) {
+            scores[name] = playerData.score || 0;
+        }
+        updateScores(scores);
     }
     
     // Start countdown timer if game is active
@@ -176,11 +291,27 @@ function updateGameUI(state) {
 
 function updatePlayersList(players) {
     const playersList = document.getElementById('players-list');
-    if (!playersList) return;
+    if (!playersList) {
+        console.error('players-list element not found');
+        return;
+    }
     
+    console.log('Updating players list with:', players);
     playersList.innerHTML = '';
     
-    players.forEach(playerName => {
+    if (!players || players.length === 0) {
+        const emptyDiv = document.createElement('div');
+        emptyDiv.className = 'p-2 text-gray-500 text-sm';
+        emptyDiv.textContent = 'No players yet';
+        playersList.appendChild(emptyDiv);
+        return;
+    }
+    
+    // Handle both array of strings and array of objects
+    players.forEach(playerData => {
+        const playerName = typeof playerData === 'string' ? playerData : playerData.name;
+        const playerObj = typeof playerData === 'object' ? playerData : null;
+        
         const playerDiv = document.createElement('div');
         playerDiv.className = 'p-2 border-b flex items-center gap-2';
         
@@ -194,6 +325,15 @@ function updatePlayersList(players) {
             drawerBadge.textContent = '✏️';
             drawerBadge.className = 'text-sm';
             playerDiv.appendChild(drawerBadge);
+        }
+        
+        // Mark host
+        if (playerObj && playerObj.is_host) {
+            const hostBadge = document.createElement('span');
+            hostBadge.textContent = '👑';
+            hostBadge.className = 'text-sm';
+            hostBadge.title = 'Host';
+            playerDiv.appendChild(hostBadge);
         }
         
         playerDiv.appendChild(nameSpan);
@@ -255,20 +395,42 @@ function hideWordDisplay() {
     }
 }
 
-function updateWordHint(hintData) {
-    const hintText = document.getElementById('hint-text');
-    if (!hintText) return;
+function showWordBlanks(length) {
+    const hintText = document.getElementById('word-hint');
+    const hintDisplay = document.getElementById('hint-display');
     
-    const existingText = hintText.textContent;
-    let newText = existingText;
-    
-    if (hintData.position === 'first') {
-        newText = `First letter: ${hintData.hint}`;
-    } else if (hintData.position === 'last') {
-        newText = `First letter: ${gameState?.hints_revealed[0] || ''} | Last letter: ${hintData.hint}`;
+    if (hintDisplay) {
+        hintDisplay.textContent = '_ '.repeat(length).trim();
+        hintDisplay.className = 'text-2xl font-mono text-center';
     }
     
-    hintText.textContent = newText;
+    if (hintText) {
+        hintText.textContent = `Word length: ${length}`;
+    }
+}
+
+function updateWordHint(hintData) {
+    const hintDisplay = document.getElementById('hint-display');
+    const hintText = document.getElementById('word-hint');
+    
+    if (!hintDisplay) return;
+    
+    if (hintData.word_display) {
+        hintDisplay.textContent = hintData.word_display;
+        hintDisplay.className = 'text-2xl font-mono text-center';
+    } else if (hintData.type === 'first_letter') {
+        hintDisplay.textContent = `${hintData.letter}${'_ '.repeat(gameState?.word_length - 1 || 0).trim()}`;
+        addChatMessage('System', `💡 Hint: First letter is "${hintData.letter}"`);
+    } else if (hintData.type === 'last_letter') {
+        const currentDisplay = hintDisplay.textContent || '';
+        const wordLength = gameState?.word_length || 0;
+        const firstLetter = currentDisplay[0] || '_';
+        hintDisplay.textContent = `${firstLetter}${'_ '.repeat(wordLength - 2).trim()} ${hintData.letter}`;
+        addChatMessage('System', `💡 Hint: Last letter is "${hintData.letter}"`);
+    } else if (hintData.type === 'pattern' || hintData.pattern) {
+        hintDisplay.textContent = hintData.pattern || hintData.word_display;
+        addChatMessage('System', `💡 Hint: ${hintData.pattern || hintData.word_display}`);
+    }
 }
 
 function addChatMessage(player, message, timestamp) {
@@ -292,19 +454,28 @@ function addChatMessage(player, message, timestamp) {
     chatMessages.scrollTop = chatMessages.scrollHeight;
 }
 
-function showTurnEndedModal(data) {
-    const modal = document.getElementById('turn-ended-modal');
-    const resultsDiv = document.getElementById('turn-results');
+// Make addChatMessage globally accessible
+window.addChatMessage = addChatMessage;
+
+function showRoundEndModal(data) {
+    const modal = document.getElementById('round-ended-modal');
+    const resultsDiv = document.getElementById('round-results');
+    const roundSpan = document.getElementById('modal-round');
     
     if (!modal || !resultsDiv) return;
     
-    let html = `<p class="mb-2">The word was: <strong>${data.word}</strong></p>`;
-    html += '<p class="mb-4 font-semibold">Scores:</p>';
-    html += '<ul class="list-disc list-inside">';
+    if (roundSpan) {
+        roundSpan.textContent = data.round || '-';
+    }
+    
+    let html = `<p class="mb-2 text-lg">The word was: <strong class="text-2xl">${data.word}</strong></p>`;
+    html += '<p class="mb-4 font-semibold">Current Scores:</p>';
+    html += '<ul class="list-disc list-inside space-y-1">';
     
     const sortedScores = Object.entries(data.scores || {}).sort((a, b) => b[1] - a[1]);
-    sortedScores.forEach(([name, score]) => {
-        html += `<li>${name}: ${score} points</li>`;
+    sortedScores.forEach(([name, score], index) => {
+        const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+        html += `<li class="${index === 0 ? 'font-bold text-yellow-600' : ''}">${medal} ${name}: ${score} points</li>`;
     });
     
     html += '</ul>';
@@ -313,7 +484,35 @@ function showTurnEndedModal(data) {
     modal.classList.remove('hidden');
 }
 
+function showGameOverModal(data) {
+    const modal = document.getElementById('game-over-modal');
+    const resultsDiv = document.getElementById('game-over-results');
+    
+    if (!modal || !resultsDiv) return;
+    
+    let html = `<p class="mb-4 text-xl">🎉 Winner: <strong class="text-2xl text-yellow-600">${data.winner}</strong> with ${data.winner_score} points!</p>`;
+    html += '<p class="mb-4 font-semibold">Final Scores:</p>';
+    html += '<ul class="list-disc list-inside space-y-1">';
+    
+    (data.final_scores || []).forEach(([name, score], index) => {
+        const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '';
+        html += `<li class="${index === 0 ? 'font-bold text-yellow-600 text-lg' : ''}">${medal} ${name}: ${score} points</li>`;
+    });
+    
+    html += '</ul>';
+    resultsDiv.innerHTML = html;
+    
+    modal.classList.remove('hidden');
+}
+
+let currentTimer = null;
+
 function startTimer(initialTime) {
+    // Clear existing timer if any
+    if (currentTimer) {
+        clearInterval(currentTimer);
+    }
+    
     let timeLeft = initialTime;
     
     const timerInterval = setInterval(() => {
@@ -325,25 +524,35 @@ function startTimer(initialTime) {
             // Change color when time is running out
             if (timeLeft <= 10) {
                 timeEl.classList.add('text-red-600', 'font-bold');
+            } else {
+                timeEl.classList.remove('text-red-600', 'font-bold');
             }
         }
         
         if (timeLeft <= 0) {
             clearInterval(timerInterval);
-            // Request game state update
+            currentTimer = null;
+            // Request game state update (server should handle turn timeout)
             if (socket && roomId) {
                 socket.emit('get_game_state', { room_id: roomId });
             }
         }
     }, 1000);
+    
+    currentTimer = timerInterval;
 }
 
 // Initialize socket when DOM is ready
 if (typeof document !== 'undefined') {
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', initSocket);
+        document.addEventListener('DOMContentLoaded', () => {
+            // Small delay to ensure all scripts are loaded
+            setTimeout(initSocket, 50);
+        });
     } else {
-        initSocket();
+        // Small delay to ensure all scripts are loaded
+        setTimeout(initSocket, 50);
     }
 }
+
 
